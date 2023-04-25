@@ -2,6 +2,7 @@
 
 const imagePrefix = './img/';
 const imagePaths = [
+  'level.png',
   'chars/dot.png',
   'chars/dot_bed.png',
   'chars/dot_border.png',
@@ -23,8 +24,13 @@ const imagePaths = [
   'chars/voxandra.png',
   'chars/voxandra_bed.png',
   'chars/voxandra_border.png',
+  'items/donut1.png',
+  'items/donut2.png',
+  'items/donut3.png',
+  'items/donut4.png',
+  'items/donut5.png',
+  'items/donut6.png',
   'text/text_char_select.png',
-  'level.png'
 ];
 
 const charInfo = [
@@ -101,6 +107,148 @@ function overlapsCharacter(char, x, y) {
     (y < char.y + char.height);
 }
 
+let entityIdCounter = 0;
+
+class Entity {
+  constructor(x, y, width, height, physWidth, physHeight, speedX=0, speedY=0, spin=0, spinSpeed=0) {
+    this.x = x;
+    this.y = y;
+    this.width = width;
+    this.height = height;
+    this.physWidth = physWidth;
+    this.physHeight = physHeight;
+    this.speedX = speedX;
+    this.speedY = speedY;
+    this.spin = spin;
+    this.spinSpeed = spinSpeed;
+    this.id = entityIdCounter++;
+  }
+
+  render(ctx, scrollTop, timePassed) {
+    const img = this.getCurrentImg(timePassed);
+
+    ctx.save();
+    const drawX = this.x + (this.width / 2) - ((this.width - this.physWidth) / 2);
+    const drawY = this.y - scrollTop + (this.height / 2) - ((this.height - this.physHeight) / 2);
+    ctx.setTransform(1, 0, 0, 1, drawX, drawY); // sets scale and origin
+    ctx.rotate(this.spin);
+    ctx.drawImage(img, -1 * (this.width / 2), -1 * (this.height / 2), this.width, this.height);
+
+    if (debugToggle) {
+      ctx.beginPath();
+      ctx.lineWidth = '1';
+      ctx.strokeStyle = 'red';
+      ctx.rect(-1 * (this.physWidth / 2), -1 * (this.physHeight / 2), this.physWidth, this.physHeight);
+      ctx.stroke();
+    }
+
+    ctx.restore();
+  }
+
+  overlaps(otherEntity) {
+    // TODO: Implement rotated collision?
+    return this.x + this.physWidth >= otherEntity.x &&
+      this.x <= otherEntity.x + otherEntity.physWidth &&
+      this.y <= otherEntity.y + otherEntity.physHeight &&
+      this.y + this.physHeight >= otherEntity.y
+  }
+}
+
+const keyPressSpeedFraction = 1500;
+const keyPressSpinFraction = 10000;
+const dragSpeedFraction = 10000;
+const gravitySpeedFraction = 1000;
+const maxSpin = 0.16;
+
+class PlayerEntity extends Entity {
+  constructor(x, y, charInfo, bedTop) {
+    super(x, y, charInfo.width, charInfo.height, charInfo.physWidth, charInfo.physHeight);
+    this.playerImg = imageMap.get(`chars/${charInfo.name}.png`);
+    this.bedBounceTop = bedTop + 60;
+    this.bounceSpeed = 1;
+  }
+
+  getCurrentImg(_timePassed) {
+    return this.playerImg;
+  }
+
+  gameLogic(timePassed) {
+    // Adjust player position based on existing speed
+    this.x += this.speedX * timePassed;
+    if (this.x <= 0) {
+      this.x = 0;
+      this.speedX = 0;
+    } else if (this.x >= width - this.physWidth) {
+      this.x = width - this.physWidth;
+      this.speedX = 0;
+    }
+
+    this.y += this.speedY * timePassed;
+
+    // If they touched the bed, apply current bounce
+    if (this.y + this.physHeight >= this.bedBounceTop) {
+      this.y = this.bedBounceTop - this.physHeight;
+      this.speedY = -1 * this.bounceSpeed;
+    }
+
+    // Adjust spin
+    this.spin += this.spinSpeed;
+
+    // If pressing left or right, effect speed
+    if (leftPressed) {
+      this.speedX -= (timePassed / keyPressSpeedFraction);
+      if (this.x > 0) {
+        this.spinSpeed -= (timePassed / keyPressSpinFraction);
+        this.spinSpeed = Math.max(this.spinSpeed, -1 * maxSpin);
+      }
+    } else if (rightPressed) {
+      this.speedX += (timePassed / keyPressSpeedFraction);
+      if (this.x < width - this.physWidth) {
+        this.spinSpeed += (timePassed / keyPressSpinFraction);
+        this.spinSpeed = Math.min(this.spinSpeed, maxSpin);
+      }
+    } else {
+      // If not pressing a key, apply drag
+      if (this.speedX < 0) {
+        this.speedX += (timePassed / dragSpeedFraction);
+        this.speedX = Math.min(this.speedX, 0);
+      } else {
+        this.speedX -= (timePassed / dragSpeedFraction);
+        this.speedX = Math.max(this.speedX, 0);
+      }
+    }
+
+    // Apply gravity
+    this.speedY += (timePassed / gravitySpeedFraction);
+  }
+}
+
+class DonutEntity extends Entity {
+  constructor(donutNumber, x, y) {
+    super(x, y, 50, 50, 50, 50);
+    this.donutImg = imageMap.get(`items/donut${donutNumber}.png`);
+  }
+
+  getCurrentImg(_timePassed) {
+    return this.donutImg;
+  }
+
+  handlePlayerInteraction(playerEntity) {
+
+  }
+}
+
+class EnemyEntity extends Entity {
+
+  getCurrentImg(_timePassed) {
+    return this.playerImg;
+  }
+
+  handlePlayerInteraction(playerEntity) {
+
+  }
+}
+
 /**
  * Renderer for character selection
  */
@@ -132,35 +280,25 @@ class CharSelectHandler {
   }
 }
 
-const keyPressSpeedFraction = 1500;
-const keyPressSpinFraction = 10000;
-const dragSpeedFraction = 10000;
-const gravitySpeedFraction = 1000;
-const maxSpin = 0.16;
-
 /**
  * Renderer for the main game
  */
 class MainGameHandler {
   constructor() {
     this.levelImg = imageMap.get('level.png');
-    this.playerImg = imageMap.get(`chars/${selectedChar.name}.png`);
     this.bedImg = imageMap.get(`chars/${selectedChar.name}_bed.png`);
-
-    this.playerX = (width / 2) - (selectedChar.physWidth / 2);
-    this.playerY = this.levelImg.height - selectedChar.physHeight - 300;
-    this.playerSpin = 0;
-    this.playerSpinSpeed = 0;
-    this.playerSpeedX = 0;
-    this.playerSpeedY = 0;
-    this.playerHealth = 3;
-    this.playerFoodCollect = 0;
-    this.bounceSpeed = 1;
 
     this.bedWidth = width;
     this.bedHeight = this.bedImg.height / (this.bedImg.width / width);
     this.bedTop = this.levelImg.height - this.bedHeight - 20;
-    this.bedBounceTop = this.bedTop + 50;
+
+    const playerX = (width / 2) - (selectedChar.physWidth / 2);
+    const playerY = this.levelImg.height - selectedChar.physHeight - 300;
+    this.player = new PlayerEntity(playerX, playerY, selectedChar, this.bedTop);
+    this.playerHealth = 3;
+    this.playerFoodCollect = 0;
+
+    this.entityList = [this.player];
   }
 
   render(timePassed) {
@@ -169,7 +307,7 @@ class MainGameHandler {
     ctx.fillStyle = '000';
     ctx.fillRect(0, 0, width, height);
 
-    const playerMiddle = this.playerY + (selectedChar.height / 2);
+    const playerMiddle = this.player.y + (this.player.height / 2);
     let scrollTop = playerMiddle - (height / 2);
     scrollTop = Math.max(scrollTop, 0);
     scrollTop = Math.min(scrollTop, this.levelImg.height - height);
@@ -180,23 +318,10 @@ class MainGameHandler {
     // Draw the bed
     ctx.drawImage(this.bedImg, (width / 2) - (this.bedWidth / 2), this.bedTop - scrollTop, this.bedWidth, this.bedHeight);
 
-    // Draw the player
-    ctx.save();
-    const playerDrawX = this.playerX + (selectedChar.width - selectedChar.physWidth);
-    const playerDrawY = this.playerY - scrollTop + (selectedChar.height - selectedChar.physHeight);
-    ctx.setTransform(1, 0, 0, 1, playerDrawX, playerDrawY); // sets scale and origin
-    ctx.rotate(this.playerSpin);
-    ctx.drawImage(this.playerImg, -1 * (selectedChar.width / 2), -1 * (selectedChar.height / 2), selectedChar.width, selectedChar.height);
-
-    if (debugToggle) {
-      ctx.beginPath();
-      ctx.lineWidth = '1';
-      ctx.strokeStyle = 'red';
-      ctx.rect(-1 * (selectedChar.physWidth / 2), -1 * (selectedChar.physHeight / 2), selectedChar.physWidth, selectedChar.physHeight);
-      ctx.stroke();
+    // Draw the entities in reverse order, as the more important tend to be first
+    for (let i = this.entityList.length - 1; i >= 0; i--) {
+      this.entityList[i].render(ctx, scrollTop, timePassed);
     }
-
-    ctx.restore();
   }
 
   gameLogic(timePassed) {
@@ -204,53 +329,13 @@ class MainGameHandler {
       return;
     }
 
-    // Adjust player position based on existing speed
-    this.playerX += this.playerSpeedX * timePassed;
-    if (this.playerX <= 0) {
-      this.playerX = 0;
-      this.playerSpeedX = 0;
-    } else if (this.playerX >= width - selectedChar.physWidth) {
-      this.playerX = width - selectedChar.physWidth;
-      this.playerSpeedX = 0;
+    for (const entity of this.entityList) {
+      entity.gameLogic(timePassed);
     }
+  }
 
-    this.playerY += this.playerSpeedY * timePassed;
+  spawnDonut(startingOut) {
 
-    // If they touched the bed, apply current bounce
-    if (this.playerY + selectedChar.physHeight >= this.bedBounceTop) {
-      this.playerY = this.bedBounceTop - selectedChar.physHeight;
-      this.playerSpeedY = -1 * this.bounceSpeed;
-    }
-
-    // Adjust spin
-    this.playerSpin += this.playerSpinSpeed;
-
-    // If pressing left or right, effect speed
-    if (leftPressed) {
-      this.playerSpeedX -= (timePassed / keyPressSpeedFraction);
-      if (this.playerX > 0) {
-        this.playerSpinSpeed -= (timePassed / keyPressSpinFraction);
-        this.playerSpinSpeed = Math.max(this.playerSpinSpeed, -1 * maxSpin);
-      }
-    } else if (rightPressed) {
-      this.playerSpeedX += (timePassed / keyPressSpeedFraction);
-      if (this.playerX < width - selectedChar.physWidth) {
-        this.playerSpinSpeed += (timePassed / keyPressSpinFraction);
-        this.playerSpinSpeed = Math.min(this.playerSpinSpeed, maxSpin);
-      }
-    } else {
-      // If not pressing a key, apply drag
-      if (this.playerSpeedX < 0) {
-        this.playerSpeedX += (timePassed / dragSpeedFraction);
-        this.playerSpeedX = Math.min(this.playerSpeedX, 0);
-      } else {
-        this.playerSpeedX -= (timePassed / dragSpeedFraction);
-        this.playerSpeedX = Math.max(this.playerSpeedX, 0);
-      }
-    }
-
-    // Apply gravity
-    this.playerSpeedY += (timePassed / gravitySpeedFraction);
   }
 }
 
