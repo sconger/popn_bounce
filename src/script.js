@@ -2,6 +2,8 @@
 
 const imagePrefix = './img/';
 const imagePaths = [
+  'heart_empty.png',
+  'heart_full.png',
   'level.png',
   'chars/dot.png',
   'chars/dot_bed.png',
@@ -100,7 +102,7 @@ const charInfo = [
 ];
 
 /** Checks if the given character is at location x y */
-function overlapsCharacter(char, x, y) {
+function overlapsPlayerSelect(char, x, y) {
   return (x > char.x) &&
     (x < char.x + char.width) &&
     (y > char.y) &&
@@ -110,7 +112,8 @@ function overlapsCharacter(char, x, y) {
 let entityIdCounter = 0;
 
 class Entity {
-  constructor(x, y, width, height, physWidth, physHeight, speedX=0, speedY=0, spin=0, spinSpeed=0) {
+  constructor(gameHandler, x, y, width, height, physWidth, physHeight, speedX=0, speedY=0, spin=0, spinSpeed=0) {
+    this.gameHandler = gameHandler;
     this.x = x;
     this.y = y;
     this.width = width;
@@ -157,14 +160,20 @@ class Entity {
 const keyPressSpeedFraction = 1500;
 const keyPressSpinFraction = 10000;
 const dragSpeedFraction = 10000;
+const spinSpeedFraction = 25;
+const verticalSpeedFraction = 2;
+const horizontalSpeedFraction = 2;
 const gravitySpeedFraction = 1000;
 const maxSpin = 0.16;
+const bedBounceOffset = 60;
+const donutMove = 66.5;
+const donutCollectSpeedAdd = .05;
 
 class PlayerEntity extends Entity {
-  constructor(x, y, charInfo, bedTop) {
-    super(x, y, charInfo.width, charInfo.height, charInfo.physWidth, charInfo.physHeight);
+  constructor(gameHandler, x, y, charInfo, bedTop) {
+    super(gameHandler, x, y, charInfo.width, charInfo.height, charInfo.physWidth, charInfo.physHeight);
     this.playerImg = imageMap.get(`chars/${charInfo.name}.png`);
-    this.bedBounceTop = bedTop + 60;
+    this.bedBounceTop = bedTop + bedBounceOffset;
     this.bounceSpeed = 1;
   }
 
@@ -173,8 +182,10 @@ class PlayerEntity extends Entity {
   }
 
   gameLogic(timePassed) {
+    let touchedBed = false;
+
     // Adjust player position based on existing speed
-    this.x += this.speedX * timePassed;
+    this.x += this.speedX * (timePassed / horizontalSpeedFraction);
     if (this.x <= 0) {
       this.x = 0;
       this.speedX = 0;
@@ -183,16 +194,17 @@ class PlayerEntity extends Entity {
       this.speedX = 0;
     }
 
-    this.y += this.speedY * timePassed;
+    this.y += this.speedY * (timePassed / verticalSpeedFraction);
 
     // If they touched the bed, apply current bounce
     if (this.y + this.physHeight >= this.bedBounceTop) {
       this.y = this.bedBounceTop - this.physHeight;
       this.speedY = -1 * this.bounceSpeed;
+      touchedBed = true;
     }
 
     // Adjust spin
-    this.spin += this.spinSpeed;
+    this.spin += (timePassed * this.spinSpeed) / spinSpeedFraction;
 
     // If pressing left or right, effect speed
     if (leftPressed) {
@@ -219,14 +231,26 @@ class PlayerEntity extends Entity {
     }
 
     // Apply gravity
-    this.speedY += (timePassed / gravitySpeedFraction);
+    this.speedY += ((timePassed / gravitySpeedFraction) / verticalSpeedFraction);
+
+    if (touchedBed) {
+      this.gameHandler.bedTouched();
+    }
   }
 }
 
 class DonutEntity extends Entity {
-  constructor(donutNumber, x, y) {
-    super(x, y, 50, 50, 50, 50);
+  constructor(gameHandler, donutNumber, x, y) {
+    super(gameHandler, x, y, 30, 30, 30, 30);
+    const spinDir = Math.floor(Math.random() * 2) === 1;
+    this.spinSpeed = spinDir ? .05 : -.05;
+
     this.donutImg = imageMap.get(`items/donut${donutNumber}.png`);
+  }
+
+  gameLogic(timePassed) {
+    // Adjust spin
+    this.spin += (timePassed * this.spinSpeed) / spinSpeedFraction;
   }
 
   getCurrentImg(_timePassed) {
@@ -234,7 +258,7 @@ class DonutEntity extends Entity {
   }
 
   handlePlayerInteraction(playerEntity) {
-
+    this.gameHandler.donutTouched(this);
   }
 }
 
@@ -260,7 +284,7 @@ class CharSelectHandler {
     ctx.drawImage(imageMap.get('text/text_char_select.png'), 100, 100, 300, 100);
   
     for (const char of charInfo) {
-      const overlaps = overlapsCharacter(char, lastMouseX, lastMouseY);    
+      const overlaps = overlapsPlayerSelect(char, lastMouseX, lastMouseY);    
       const imagePath = overlaps ? `chars/${char.name}_border.png` : `chars/${char.name}.png`;
       ctx.drawImage(imageMap.get(imagePath), char.x, char.y, char.width, char.height);
     }
@@ -269,7 +293,7 @@ class CharSelectHandler {
   click(e) {
     // If a character was clicked, note which was picked and change state
     for (const char of charInfo) {
-      const overlaps = overlapsCharacter(char, e.clientX, e.clientY);
+      const overlaps = overlapsPlayerSelect(char, e.clientX, e.clientY);
       if (overlaps) {
         console.log(`Selected ${char.name}`);
         selectedChar = char;
@@ -286,19 +310,25 @@ class CharSelectHandler {
 class MainGameHandler {
   constructor() {
     this.levelImg = imageMap.get('level.png');
+    this.heartFullImg = imageMap.get(`heart_full.png`);
+    this.heartEmptyImg = imageMap.get(`heart_empty.png`);
     this.bedImg = imageMap.get(`chars/${selectedChar.name}_bed.png`);
+    this.donutCountImg = imageMap.get(`items/donut1.png`);
 
     this.bedWidth = width;
     this.bedHeight = this.bedImg.height / (this.bedImg.width / width);
     this.bedTop = this.levelImg.height - this.bedHeight - 20;
+    this.bedBounceTop = this.bedTop + bedBounceOffset;
 
     const playerX = (width / 2) - (selectedChar.physWidth / 2);
     const playerY = this.levelImg.height - selectedChar.physHeight - 300;
-    this.player = new PlayerEntity(playerX, playerY, selectedChar, this.bedTop);
+    this.player = new PlayerEntity(this, playerX, playerY, selectedChar, this.bedTop);
     this.playerHealth = 3;
     this.playerFoodCollect = 0;
+    this.donutSpawned = false;
 
     this.entityList = [this.player];
+    this.spawnDonut(true);
   }
 
   render(timePassed) {
@@ -322,6 +352,21 @@ class MainGameHandler {
     for (let i = this.entityList.length - 1; i >= 0; i--) {
       this.entityList[i].render(ctx, scrollTop, timePassed);
     }
+
+    // Draw the hearts
+    let statsX = width - ((3 * 22) + 10);
+    let heartX = statsX;
+    for (let i = 0; i < 3; i++) {
+      const filled = this.playerHealth >= (3 - i);
+      const heartImage = filled ? this.heartFullImg : this.heartEmptyImg;
+      ctx.drawImage(heartImage, heartX, 10, 20, 20);
+      heartX += 22;
+    }
+
+    // Draw the donut counter
+    ctx.drawImage(this.donutCountImg, statsX, 36, 20, 20);
+    ctx.font = '20px serif';
+    ctx.fillText(this.playerFoodCollect, statsX + 25, 52);
   }
 
   gameLogic(timePassed) {
@@ -330,12 +375,60 @@ class MainGameHandler {
     }
 
     for (const entity of this.entityList) {
-      entity.gameLogic(timePassed);
+      if (entity.gameLogic) {
+        entity.gameLogic(timePassed);
+      }
+    }
+
+    for (const entity of this.entityList) {
+      if (entity.gameLogic) {
+        entity.gameLogic(timePassed);
+      }
+    }
+
+    for (const entity of this.entityList) {
+      if (!entity.handlePlayerInteraction) {
+        continue;
+      }
+
+      if (this.player.overlaps(entity)) {
+        entity.handlePlayerInteraction(this.player);
+      }
     }
   }
 
   spawnDonut(startingOut) {
+    let donutY = this.bedBounceTop - 550 - (this.playerFoodCollect * donutMove);
+    let donutX;
 
+    if (startingOut) {
+      if (Math.floor(Math.random() * 2) % 2) {
+        donutX = 50;
+      } else {
+        donutX = width - 30 - 50;
+      }
+    } else {
+      const range = width - 90;
+      donutX = (Math.random() * range) + 30;
+    }
+
+    const donutIndex = Math.floor(Math.random() * 6) + 1;
+    const donut = new DonutEntity(this, donutIndex, donutX, donutY);
+    this.entityList.push(donut);
+    this.donutSpawned = true;
+  }
+
+  bedTouched() {
+    if (!this.donutSpawned) {
+      this.spawnDonut(false);
+    }
+  }
+
+  donutTouched(donut) {
+    this.entityList = this.entityList.filter((entity) => entity.id != donut.id);
+    this.playerFoodCollect++;
+    this.donutSpawned = false;
+    this.player.bounceSpeed += donutCollectSpeedAdd;
   }
 }
 
