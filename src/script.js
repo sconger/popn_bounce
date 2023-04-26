@@ -26,6 +26,21 @@ const imagePaths = [
   'chars/voxandra.png',
   'chars/voxandra_bed.png',
   'chars/voxandra_border.png',
+  'enemies/bowser-1.png',
+  'enemies/bowser-2.png',
+  'enemies/bowser-3.png',
+  'enemies/bowser-4.png',
+  'enemies/opa_opa-1.png',
+  'enemies/opa_opa-2.png',
+  'enemies/plane-1.png',
+  'enemies/plane-2.png',
+  'enemies/plane-3.png',
+  'enemies/tonberry-1.png',
+  'enemies/tonberry-2.png',
+  'explosion/explosion-1.png',
+  'explosion/explosion-2.png',
+  'explosion/explosion-3.png',
+  'explosion/explosion-4.png',
   'items/donut1.png',
   'items/donut2.png',
   'items/donut3.png',
@@ -34,6 +49,8 @@ const imagePaths = [
   'items/donut6.png',
   'text/text_char_select.png',
 ];
+
+const songElem = document.querySelector('audio');
 
 const charInfo = [
   {
@@ -101,18 +118,63 @@ const charInfo = [
   }
 ];
 
-/** Checks if the given character is at location x y */
-function overlapsPlayerSelect(char, x, y) {
-  return (x > char.x) &&
-    (x < char.x + char.width) &&
-    (y > char.y) &&
-    (y < char.y + char.height);
-}
+const enemyInfo = [
+  {
+    name: 'bowser',
+    maxCount: 1,
+    animation: ['enemies/bowser-1.png', 'enemies/bowser-2.png', 'enemies/bowser-3.png', 'enemies/bowser-4.png'],
+    animRate: .0125,
+    width: 100,
+    height: 100,
+    physWidth: 80,
+    physHeight: 80
+  },
+  {
+    name: 'opa_opa',
+    maxCount: 1,
+    animation: ['enemies/opa_opa-1.png', 'enemies/opa_opa-2.png'],
+    animRate: .0125,
+    width: 50,
+    height: 50,
+    physWidth: 30,
+    physHeight: 30
+  },
+  {
+    name: 'plane',
+    maxCount: 5,
+    animation: ['enemies/plane-1.png', 'enemies/plane-2.png', 'enemies/plane-3.png'],
+    animRate: .025,
+    width: 100,
+    height: 50,
+    physWidth: 80,
+    physHeight: 30
+  },
+  {
+    name: 'tonberry',
+    maxCount: 3,
+    animation: ['enemies/tonberry-1.png', 'enemies/tonberry-2.png'],
+    animRate: .05,
+    width: 50,
+    height: 50,
+    physWidth: 30,
+    physHeight: 30
+  }
+];
+
+const explosionFrames = [
+  'explosion/explosion-1.png',
+  'explosion/explosion-2.png',
+  'explosion/explosion-3.png',
+  'explosion/explosion-4.png'
+];
+const explosionAnimRate = .01;
+const explosionWidth = 100;
+const explosionHeight = 100;
 
 let entityIdCounter = 0;
 
 class Entity {
-  constructor(gameHandler, x, y, width, height, physWidth, physHeight, speedX=0, speedY=0, spin=0, spinSpeed=0) {
+  constructor(gameHandler, x, y, width, height, physWidth, physHeight, speedX=0, speedY=0, spin=0, spinSpeed=0, horizFlip=false) {
     this.gameHandler = gameHandler;
     this.x = x;
     this.y = y;
@@ -124,6 +186,7 @@ class Entity {
     this.speedY = speedY;
     this.spin = spin;
     this.spinSpeed = spinSpeed;
+    this.horizFlip = horizFlip;
     this.id = entityIdCounter++;
   }
 
@@ -133,7 +196,10 @@ class Entity {
     ctx.save();
     const drawX = this.x + (this.width / 2) - ((this.width - this.physWidth) / 2);
     const drawY = this.y - scrollTop + (this.height / 2) - ((this.height - this.physHeight) / 2);
-    ctx.setTransform(1, 0, 0, 1, drawX, drawY); // sets scale and origin
+    ctx.translate(drawX, drawY); // sets scale and origin
+    if (this.horizFlip) {
+      ctx.scale(-1, 1);
+    }
     ctx.rotate(this.spin);
     ctx.drawImage(img, -1 * (this.width / 2), -1 * (this.height / 2), this.width, this.height);
 
@@ -161,9 +227,9 @@ const keyPressSpeedFraction = 1500;
 const keyPressSpinFraction = 10000;
 const dragSpeedFraction = 10000;
 const spinSpeedFraction = 25;
-const verticalSpeedFraction = 2;
-const horizontalSpeedFraction = 2;
-const gravitySpeedFraction = 1000;
+const horizontalSpeedMultiplier = .5;
+const verticalSpeedMultiplier = .5;
+const gravitySpeedMultiplier = .001;
 const maxSpin = 0.16;
 const bedBounceOffset = 60;
 const donutMove = 66.5;
@@ -177,15 +243,11 @@ class PlayerEntity extends Entity {
     this.bounceSpeed = 1;
   }
 
-  getCurrentImg(_timePassed) {
-    return this.playerImg;
-  }
-
   gameLogic(timePassed) {
     let touchedBed = false;
 
     // Adjust player position based on existing speed
-    this.x += this.speedX * (timePassed / horizontalSpeedFraction);
+    this.x += this.speedX * (timePassed * horizontalSpeedMultiplier);
     if (this.x <= 0) {
       this.x = 0;
       this.speedX = 0;
@@ -194,7 +256,7 @@ class PlayerEntity extends Entity {
       this.speedX = 0;
     }
 
-    this.y += this.speedY * (timePassed / verticalSpeedFraction);
+    this.y += this.speedY * (timePassed * verticalSpeedMultiplier);
 
     // If they touched the bed, apply current bounce
     if (this.y + this.physHeight >= this.bedBounceTop) {
@@ -231,11 +293,15 @@ class PlayerEntity extends Entity {
     }
 
     // Apply gravity
-    this.speedY += ((timePassed / gravitySpeedFraction) / verticalSpeedFraction);
+    this.speedY += ((timePassed * gravitySpeedMultiplier) * verticalSpeedMultiplier);
 
     if (touchedBed) {
       this.gameHandler.bedTouched();
     }
+  }
+
+  getCurrentImg() {
+    return this.playerImg;
   }
 }
 
@@ -253,23 +319,64 @@ class DonutEntity extends Entity {
     this.spin += (timePassed * this.spinSpeed) / spinSpeedFraction;
   }
 
-  getCurrentImg(_timePassed) {
+  getCurrentImg() {
     return this.donutImg;
   }
 
-  handlePlayerInteraction(playerEntity) {
+  handlePlayerInteraction(_playerEntity) {
     this.gameHandler.donutTouched(this);
   }
 }
 
 class EnemyEntity extends Entity {
-
-  getCurrentImg(_timePassed) {
-    return this.playerImg;
+  constructor(gameHandler, info, x, y, speedX) {
+    super(gameHandler, x, y, info.width, info.height, info.physWidth, info.physHeight, speedX, 0, 0, 0, speedX < 0);
+    this.info = info;
+    this.totalTime = 0;
+    this.animation = info.animation.map((filePath) => imageMap.get(filePath));
   }
 
-  handlePlayerInteraction(playerEntity) {
+  gameLogic(timePassed) {
+    this.totalTime += timePassed;
 
+    this.x += this.speedX * (timePassed * horizontalSpeedMultiplier);
+
+    if ((this.speedX < 0 && this.x < -1 * this.width) ||
+         this.speedX > 0 && this.x > width) {
+      this.gameHandler.removeEntity(this);
+    }
+  }
+
+  getCurrentImg() {
+    const frameIndex = (Math.floor(this.totalTime * this.info.animRate)) % this.animation.length;
+    return this.animation[frameIndex];
+  }
+
+  handlePlayerInteraction(_playerEntity) {
+    this.gameHandler.enemyTouched(this);
+  }
+}
+
+class ExplosionEntity extends Entity {
+  constructor(gameHandler, x, y) {
+    super(gameHandler, x, y, explosionWidth, explosionHeight, explosionWidth, explosionHeight);
+    this.totalTime = 0;
+    this.animation = explosionFrames.map((filePath) => imageMap.get(filePath));
+  }
+
+  gameLogic(timePassed) {
+    this.totalTime += timePassed;
+
+    // If went past end of explosion frames, remove it
+    const frameIndex = (Math.floor(this.totalTime * explosionAnimRate));
+    if (frameIndex > this.animation.length) {
+      this.gameHandler.removeEntity(this);
+    }
+  }
+
+  getCurrentImg() {
+    const frameIndex = (Math.floor(this.totalTime * explosionAnimRate)) % this.animation.length;
+    return this.animation[frameIndex];
   }
 }
 
@@ -277,14 +384,14 @@ class EnemyEntity extends Entity {
  * Renderer for character selection
  */
 class CharSelectHandler {
-  render(timePassed) {
+  render(_timePassed) {
     ctx.fillStyle = '000';
     ctx.fillRect(0, 0, width, height);
   
     ctx.drawImage(imageMap.get('text/text_char_select.png'), 100, 100, 300, 100);
   
     for (const char of charInfo) {
-      const overlaps = overlapsPlayerSelect(char, lastMouseX, lastMouseY);    
+      const overlaps = this.overlapsPlayerSelect(char, lastMouseX, lastMouseY);    
       const imagePath = overlaps ? `chars/${char.name}_border.png` : `chars/${char.name}.png`;
       ctx.drawImage(imageMap.get(imagePath), char.x, char.y, char.width, char.height);
     }
@@ -293,14 +400,23 @@ class CharSelectHandler {
   click(e) {
     // If a character was clicked, note which was picked and change state
     for (const char of charInfo) {
-      const overlaps = overlapsPlayerSelect(char, e.clientX, e.clientY);
+      const overlaps = this.overlapsPlayerSelect(char, e.clientX, e.clientY);
       if (overlaps) {
         console.log(`Selected ${char.name}`);
         selectedChar = char;
         currentGameHandler = new MainGameHandler();
+        songElem.play();
         break;
       }
     }
+  }
+
+  /** Checks if the given character is at location x y */
+  overlapsPlayerSelect(char, x, y) {
+    return (x > char.x) &&
+      (x < char.x + char.width) &&
+      (y > char.y) &&
+      (y < char.y + char.height);
   }
 }
 
@@ -381,24 +497,19 @@ class MainGameHandler {
     }
 
     for (const entity of this.entityList) {
-      if (entity.gameLogic) {
-        entity.gameLogic(timePassed);
-      }
-    }
-
-    for (const entity of this.entityList) {
-      if (!entity.handlePlayerInteraction) {
-        continue;
-      }
-
-      if (this.player.overlaps(entity)) {
+      if (entity.handlePlayerInteraction && this.player.overlaps(entity)) {
         entity.handlePlayerInteraction(this.player);
       }
     }
   }
 
+  removeEntity(entityToRemove) {
+    console.log(`Removing ${entityToRemove.id} ${entityToRemove.constructor.name}`);
+    this.entityList = this.entityList.filter((entity) => entity.id !== entityToRemove.id);
+  }
+
   spawnDonut(startingOut) {
-    let donutY = this.bedBounceTop - 550 - (this.playerFoodCollect * donutMove);
+    let donutY = this.calcDonutY();
     let donutX;
 
     if (startingOut) {
@@ -418,23 +529,63 @@ class MainGameHandler {
     this.donutSpawned = true;
   }
 
+  calcDonutY() {
+    return this.bedBounceTop - 550 - (this.playerFoodCollect * donutMove);;
+  }
+
   bedTouched() {
     if (!this.donutSpawned) {
       this.spawnDonut(false);
     }
+
+    if (this.playerFoodCollect < 2) {
+      return;
+    }
+
+    const enemyCount = Math.floor(this.playerFoodCollect / 10) * 2 + 1;
+
+    const donutY = this.calcDonutY();
+
+    for (let i = 0; i < enemyCount; i++) {
+      const info = enemyInfo[Math.floor(Math.random() * enemyInfo.length)];
+      const spawnSide = !!Math.floor(Math.random() * 2);
+      const spawnX = spawnSide ?
+        -1 * info.width - (Math.random() * 100) :
+        width + (Math.random() * 20);
+      const spawnY = donutY + 100 + (i * 150) + (Math.random() * 50);
+      const speedX = (spawnSide ? .125 : -.125) * (1 + i * .05);
+
+      const enemy = new EnemyEntity(this, info, spawnX, spawnY, speedX);
+      this.entityList.push(enemy);
+    }
   }
 
   donutTouched(donut) {
-    this.entityList = this.entityList.filter((entity) => entity.id != donut.id);
+    this.removeEntity(donut);
     this.playerFoodCollect++;
     this.donutSpawned = false;
     this.player.bounceSpeed += donutCollectSpeedAdd;
   }
+
+  enemyTouched(enemy) {
+    this.removeEntity(enemy);
+    const enemyCenterX = enemy.x + enemy.width / 2;
+    const enemyCenterY = enemy.y + enemy.height / 2;
+    const explosionX = enemyCenterX - explosionWidth / 2;
+    const explosionY = enemyCenterY - explosionWidth / 2;
+    const explosion = new ExplosionEntity(this, explosionX, explosionY);
+    this.entityList.push(explosion);
+
+    this.playerHealth--;
+    if (this.playerHealth <= 0) {
+      // TODO: Do something on death
+    }
+  }
 }
 
 const canvas = document.getElementById('canvas');
-const width = canvas.getAttribute('width');
-const height = canvas.getAttribute('height');
+const width = Number(canvas.getAttribute('width'));
+const height = Number(canvas.getAttribute('height'));
 
 const ctx = canvas.getContext("2d");
 
@@ -517,7 +668,7 @@ function gameRender(newTimestamp) {
 }
 
 // Image and music loading process
-let imagePromises = [];
+let loadingPromises = [];
 for (const imagePath of imagePaths) {
   let promise = new Promise((resolve, reject) => {
     const imageUrl = imagePrefix + imagePath;
@@ -533,10 +684,32 @@ for (const imagePath of imagePaths) {
     });
     imageMap.set(imagePath, image);
   });
-  imagePromises.push(promise);
+  loadingPromises.push(promise);
 }
 
-Promise.all(imagePromises).then(() => {
+const audioElements = document.querySelectorAll('audio');
+for (const audioElem of audioElements) {
+  let promise = new Promise((resolve, reject) => {
+    audioElem.addEventListener('canplaythrough', function() {
+      console.log(`Loaded ${audioElem.src}`);
+      resolve();
+    });
+    audioElem.addEventListener('error', (err) => {
+      let propString = '';
+      for (prop in e.currentTarget.error) {
+        if (propString.length !== 0) {
+          propString += ', ';
+        }
+        propString += `${prop}=${e.currentTarget.error[prop]}`;
+      }
+      console.error(`Audio error for ${audioElem.src}: ${e.currentTarget.error.code}.\nError props: ${propString}`);
+      reject();
+    });
+  });
+  loadingPromises.push(promise);
+}
+
+Promise.all(loadingPromises).then(() => {
   if (pageVisible) {
     window.requestAnimationFrame(gameRender);
   }
