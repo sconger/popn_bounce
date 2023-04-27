@@ -39,8 +39,6 @@ const imagePaths = [
   'enemies/plane-3.png',
   'enemies/metroid-1.png',
   'enemies/metroid-2.png',
-  //'enemies/tonberry-1.png',
-  //'enemies/tonberry-2.png',
   'explosion/explosion-1.png',
   'explosion/explosion-2.png',
   'explosion/explosion-3.png',
@@ -52,6 +50,9 @@ const imagePaths = [
   'items/donut5.png',
   'items/donut6.png',
   'text/text_char_select.png',
+  'text/text_dream_again.png',
+  'text/text_dream_again_border.png',
+  'text/text_game_over.png'
 ];
 
 const songElem = document.querySelector('audio');
@@ -172,19 +173,7 @@ const enemyInfo = [
     height: 50,
     physWidth: 80,
     physHeight: 30
-  },
-  /*
-  {
-    name: 'tonberry',
-    maxCount: 3,
-    animation: ['enemies/tonberry-1.png', 'enemies/tonberry-2.png'],
-    animRate: .05,
-    width: 50,
-    height: 50,
-    physWidth: 30,
-    physHeight: 30
   }
-  */
 ];
 
 const explosionFrames = [
@@ -231,6 +220,20 @@ const endingLocation = {
 
 const endingSpaceCuttoff = 800;
 
+const gameOverLocation = {
+  x: 100,
+  y: 80,
+  width: 300,
+  height: 200
+};
+
+const dreamAgainLocation = {
+  x: 100,
+  y: 300,
+  width: 300,
+  height: 200
+};
+
 const keyPressSpeedFraction = 1500;
 const keyPressSpinFraction = 10000;
 const dragSpeedFraction = 10000;
@@ -257,6 +260,14 @@ function shuffleArray(array) {
       [res[i], res[j]] = [res[j], res[i]];
   }
   return res;
+}
+
+/** Checks if the coordinates are within the given screen region */
+function pointInRegion(region, x, y) {
+  return (x > region.x) &&
+    (x < region.x + region.width) &&
+    (y > region.y) &&
+    (y < region.y + region.height);
 }
 
 let entityIdCounter = 0;
@@ -530,7 +541,7 @@ class CharSelectHandler {
     ctx.drawImage(imageMap.get('text/text_char_select.png'), 100, 100, 300, 100);
   
     for (const char of charInfo) {
-      const overlaps = this.overlapsPlayerSelect(char, lastMouseX, lastMouseY);    
+      const overlaps = pointInRegion(char, lastMouseX, lastMouseY);    
       const imagePath = overlaps ? `chars/${char.name}_border.png` : `chars/${char.name}.png`;
       ctx.drawImage(imageMap.get(imagePath), char.x, char.y, char.width, char.height);
     }
@@ -539,7 +550,7 @@ class CharSelectHandler {
   click(e) {
     // If a character was clicked, note which was picked and change state
     for (const char of charInfo) {
-      const overlaps = this.overlapsPlayerSelect(char, e.clientX, e.clientY);
+      const overlaps = pointInRegion(char, e.clientX, e.clientY);
       if (overlaps) {
         console.log(`Selected ${char.name}`);
         selectedChar = char;
@@ -548,14 +559,6 @@ class CharSelectHandler {
         break;
       }
     }
-  }
-
-  /** Checks if the given character is at location x y */
-  overlapsPlayerSelect(char, x, y) {
-    return (x > char.x) &&
-      (x < char.x + char.width) &&
-      (y > char.y) &&
-      (y < char.y + char.height);
   }
 }
 
@@ -569,6 +572,9 @@ class MainGameHandler {
     this.heartEmptyImg = imageMap.get(`heart_empty.png`);
     this.bedImg = imageMap.get(`chars/${selectedChar.name}_bed.png`);
     this.donutCountImg = imageMap.get(`items/donut1.png`);
+    this.dreamAgainImg = imageMap.get('text/text_dream_again.png');
+    this.dreamAgainBorderImg = imageMap.get('text/text_dream_again_border.png');
+    this.gameOverImg = imageMap.get('text/text_game_over.png');
 
     this.bedWidth = width;
     this.bedHeight = this.bedImg.height / (this.bedImg.width / width);
@@ -601,10 +607,17 @@ class MainGameHandler {
     ctx.fillStyle = '000';
     ctx.fillRect(0, 0, width, height);
 
-    const playerMiddle = this.player.y + (this.player.height / 2);
-    let scrollTop = playerMiddle - (height / 2);
-    scrollTop = Math.max(scrollTop, 0);
-    scrollTop = Math.min(scrollTop, this.levelImg.height - height);
+    let scrollTop;
+
+    if (this.player) {
+      const playerMiddle = this.player.y + (this.player.height / 2);
+      scrollTop = playerMiddle - (height / 2);
+      scrollTop = Math.max(scrollTop, 0);
+      scrollTop = Math.min(scrollTop, this.levelImg.height - height);
+      this.lastScrollTop = scrollTop;
+    } else {
+      scrollTop = this.lastScrollTop;
+    }
 
     // Draw the level
     ctx.drawImage(this.levelImg, 0, -1 * scrollTop, this.levelImg.width, this.levelImg.height);
@@ -631,6 +644,13 @@ class MainGameHandler {
     ctx.drawImage(this.donutCountImg, statsX, 36, 20, 20);
     ctx.font = '20px serif';
     ctx.fillText(this.playerFoodCollect, statsX + 25, 52);
+
+    // Draw game over
+    if (!this.player) {
+      ctx.drawImage(this.gameOverImg, gameOverLocation.x, gameOverLocation.y, gameOverLocation.width, gameOverLocation.height);
+      const dreamAgainImg = pointInRegion(dreamAgainLocation, lastMouseX, lastMouseY) ? this.dreamAgainBorderImg : this.dreamAgainImg;
+      ctx.drawImage(dreamAgainImg, dreamAgainLocation.x, dreamAgainLocation.y, dreamAgainLocation.width, dreamAgainLocation.height);
+    }
   }
 
   gameLogic(timePassed) {
@@ -638,7 +658,7 @@ class MainGameHandler {
       return;
     }
 
-    if (this.player.y <= endingSpaceCuttoff) {
+    if (this.player && this.player.y <= endingSpaceCuttoff) {
       this.player.setInSpace();
     }
 
@@ -648,15 +668,31 @@ class MainGameHandler {
       }
     }
 
-    for (const entity of this.entityList) {
-      if (entity.handlePlayerInteraction && this.player.overlaps(entity)) {
-        entity.handlePlayerInteraction(this.player);
+    if (this.player) {
+      for (const entity of this.entityList) {
+        if (entity.handlePlayerInteraction && this.player.overlaps(entity)) {
+          entity.handlePlayerInteraction(this.player);
+          // Exit if no more player
+          if (!this.player) {
+            break;
+          }
+        }
       }
     }
   }
 
+  click(e) {
+    // If clicked dream again on game over
+    if (!this.player && pointInRegion(dreamAgainLocation, lastMouseX, lastMouseY)) {
+      console.log('Restarted');
+      selectedChar = null;
+      songElem.pause();
+      songElem.currentTime = 0;
+      currentGameHandler = new CharSelectHandler();
+    }
+  }
+
   removeEntity(entityToRemove) {
-    //console.log(`Removing ${entityToRemove.id} ${entityToRemove.constructor.name}`);
     this.entityList = this.entityList.filter((entity) => entity.id !== entityToRemove.id);
   }
 
@@ -737,7 +773,9 @@ class MainGameHandler {
 
     this.playerHealth--;
     if (this.playerHealth <= 0) {
-      // TODO: Do something on death
+      this.removeEntity(this.player);
+      this.deathY = this.player.y;
+      this.player = null;
     }
   }
 }
