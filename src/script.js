@@ -234,6 +234,7 @@ const dreamAgainLocation = {
   height: 200
 };
 
+const maxHealth = 4;
 const keyPressSpeedFraction = 1500;
 const keyPressSpinFraction = 10000;
 const dragSpeedFraction = 10000;
@@ -244,6 +245,7 @@ const gravity = .00025;
 const maxSpin = 0.16;
 const bedBounceOffset = 60;
 const donutMove = 250;
+const timeInSpaceBeforeRestart = 15000;
 
 function randomIndex(length) {
   return Math.floor(Math.random() * length);
@@ -347,8 +349,8 @@ class PlayerEntity extends Entity {
     if (this.x <= 0) {
       this.x = 0;
       this.speedX = 0;
-    } else if (this.x >= width - this.physWidth) {
-      this.x = width - this.physWidth;
+    } else if (this.x >= canvasWidth - this.physWidth) {
+      this.x = canvasWidth - this.physWidth;
       this.speedX = 0;
     }
 
@@ -369,7 +371,7 @@ class PlayerEntity extends Entity {
       }
     } else if (rightPressed) {
       this.speedX += (timePassed / keyPressSpeedFraction);
-      if (this.x < width - this.physWidth) {
+      if (this.x < canvasWidth - this.physWidth) {
         this.spinSpeed += (timePassed / keyPressSpinFraction);
         this.spinSpeed = Math.min(this.spinSpeed, maxSpin);
       }
@@ -474,7 +476,7 @@ class EnemyEntity extends Entity {
     this.x += this.speedX * (timePassed * horizontalSpeedMultiplier);
 
     if ((this.speedX < 0 && this.x < -1 * this.width) ||
-         this.speedX > 0 && this.x > width) {
+         this.speedX > 0 && this.x > canvasWidth) {
       this.gameHandler.removeEntity(this);
     }
   }
@@ -536,7 +538,7 @@ class EndingEntity extends Entity {
 class CharSelectHandler {
   render(_timePassed) {
     ctx.fillStyle = '000';
-    ctx.fillRect(0, 0, width, height);
+    ctx.fillRect(0, 0, canvasWidth, canvasHeight);
   
     ctx.drawImage(imageMap.get('text/text_char_select.png'), 100, 100, 300, 100);
   
@@ -576,16 +578,17 @@ class MainGameHandler {
     this.dreamAgainBorderImg = imageMap.get('text/text_dream_again_border.png');
     this.gameOverImg = imageMap.get('text/text_game_over.png');
 
-    this.bedWidth = width;
-    this.bedHeight = this.bedImg.height / (this.bedImg.width / width);
+    this.bedWidth = canvasWidth;
+    this.bedHeight = this.bedImg.height / (this.bedImg.width / canvasWidth);
     this.bedTop = this.levelImg.height - this.bedHeight - 20;
     this.bedBounceTop = this.bedTop + bedBounceOffset;
 
-    this.playerHealth = 3;
+    this.playerHealth = maxHealth;
     this.playerFoodCollect = 0;
     this.donutSpawned = false;
+    this.timeInSpace = 0;
 
-    const playerX = (width / 2) - (selectedChar.physWidth / 2);
+    const playerX = (canvasWidth / 2) - (selectedChar.physWidth / 2);
     const playerY = this.bedBounceTop - selectedChar.physHeight;
     this.player = new PlayerEntity(this, playerX, playerY, selectedChar, this.bedTop);
 
@@ -605,15 +608,15 @@ class MainGameHandler {
     this.gameLogic(timePassed);
 
     ctx.fillStyle = '000';
-    ctx.fillRect(0, 0, width, height);
+    ctx.fillRect(0, 0, canvasWidth, canvasHeight);
 
     let scrollTop;
 
     if (this.player) {
       const playerMiddle = this.player.y + (this.player.height / 2);
-      scrollTop = playerMiddle - (height / 2);
+      scrollTop = playerMiddle - (canvasHeight / 2);
       scrollTop = Math.max(scrollTop, 0);
-      scrollTop = Math.min(scrollTop, this.levelImg.height - height);
+      scrollTop = Math.min(scrollTop, this.levelImg.height - canvasHeight);
       this.lastScrollTop = scrollTop;
     } else {
       scrollTop = this.lastScrollTop;
@@ -623,7 +626,7 @@ class MainGameHandler {
     ctx.drawImage(this.levelImg, 0, -1 * scrollTop, this.levelImg.width, this.levelImg.height);
 
     // Draw the bed
-    ctx.drawImage(this.bedImg, (width / 2) - (this.bedWidth / 2), this.bedTop - scrollTop, this.bedWidth, this.bedHeight);
+    ctx.drawImage(this.bedImg, (canvasWidth / 2) - (this.bedWidth / 2), this.bedTop - scrollTop, this.bedWidth, this.bedHeight);
 
     // Draw the entities in reverse order, as the more important tend to be first
     for (let i = this.entityList.length - 1; i >= 0; i--) {
@@ -631,23 +634,28 @@ class MainGameHandler {
     }
 
     // Draw the hearts
-    let statsX = width - ((3 * 22) + 10);
+    let statsX = canvasWidth - ((maxHealth * 22) + 10);
     let heartX = statsX;
-    for (let i = 0; i < 3; i++) {
-      const filled = this.playerHealth >= (3 - i);
+    for (let i = 0; i < maxHealth; i++) {
+      const filled = this.playerHealth >= (maxHealth - i);
       const heartImage = filled ? this.heartFullImg : this.heartEmptyImg;
       ctx.drawImage(heartImage, heartX, 10, 20, 20);
       heartX += 22;
     }
 
     // Draw the donut counter
-    ctx.drawImage(this.donutCountImg, statsX, 36, 20, 20);
+    const donutX = canvasWidth - 60;
+    ctx.drawImage(this.donutCountImg, donutX, 36, 20, 20);
     ctx.font = '20px serif';
-    ctx.fillText(this.playerFoodCollect, statsX + 25, 52);
+    ctx.fillText(this.playerFoodCollect, donutX + 25, 52);
 
     // Draw game over
     if (!this.player) {
       ctx.drawImage(this.gameOverImg, gameOverLocation.x, gameOverLocation.y, gameOverLocation.width, gameOverLocation.height);
+    }
+
+    // Draw lose or win restart
+    if (!this.player || this.timeInSpace > timeInSpaceBeforeRestart) {
       const dreamAgainImg = pointInRegion(dreamAgainLocation, lastMouseX, lastMouseY) ? this.dreamAgainBorderImg : this.dreamAgainImg;
       ctx.drawImage(dreamAgainImg, dreamAgainLocation.x, dreamAgainLocation.y, dreamAgainLocation.width, dreamAgainLocation.height);
     }
@@ -660,6 +668,7 @@ class MainGameHandler {
 
     if (this.player && this.player.y <= endingSpaceCuttoff) {
       this.player.setInSpace();
+      this.timeInSpace += timePassed;
     }
 
     for (const entity of this.entityList) {
@@ -683,7 +692,8 @@ class MainGameHandler {
 
   click(e) {
     // If clicked dream again on game over
-    if (!this.player && pointInRegion(dreamAgainLocation, lastMouseX, lastMouseY)) {
+    if ((!this.player || this.timeInSpace > timeInSpaceBeforeRestart) &&
+        pointInRegion(dreamAgainLocation, lastMouseX, lastMouseY)) {
       console.log('Restarted');
       selectedChar = null;
       songElem.pause();
@@ -704,10 +714,10 @@ class MainGameHandler {
       if (randomBoolean()) {
         donutX = 50;
       } else {
-        donutX = width - 30 - 50;
+        donutX = canvasWidth - 30 - 50;
       }
     } else {
-      const range = width - 90;
+      const range = canvasWidth - 90;
       donutX = (Math.random() * range) + 30;
     }
 
@@ -747,7 +757,7 @@ class MainGameHandler {
       const spawnSide = randomBoolean();
       const spawnX = spawnSide ?
         -1 * info.width - (Math.random() * 100) :
-        width + (Math.random() * 20);
+        canvasWidth + (Math.random() * 20);
       const spawnY = donutY + 100 + (i * 150) + (Math.random() * 100);
       const speedX = (spawnSide ? .125 : -.125) * (1 + i * .05);
 
@@ -781,8 +791,9 @@ class MainGameHandler {
 }
 
 const canvas = document.getElementById('canvas');
-const width = Number(canvas.getAttribute('width'));
-const height = Number(canvas.getAttribute('height'));
+const loadingDiv = document.getElementById('loading');
+const canvasWidth = Number(canvas.getAttribute('width'));
+const canvasHeight = Number(canvas.getAttribute('height'));
 
 const ctx = canvas.getContext("2d");
 
@@ -907,6 +918,8 @@ for (const audioElem of audioElements) {
 }
 
 Promise.all(loadingPromises).then(() => {
+  loadingDiv.style.display = 'none';
+  canvas.style.display = '';
   if (pageVisible) {
     window.requestAnimationFrame(gameRender);
   }
