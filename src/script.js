@@ -229,21 +229,22 @@ const dragSpeedFraction = 10000;
 const spinSpeedFraction = 25;
 const horizontalSpeedMultiplier = .5;
 const verticalSpeedMultiplier = .5;
-const gravitySpeedMultiplier = .001;
+const gravity = .00025;
 const maxSpin = 0.16;
 const bedBounceOffset = 60;
-const donutMove = 66.5;
-const donutCollectSpeedAdd = .05;
+const donutMove = 250;
 
 class PlayerEntity extends Entity {
   constructor(gameHandler, x, y, charInfo, bedTop) {
     super(gameHandler, x, y, charInfo.width, charInfo.height, charInfo.physWidth, charInfo.physHeight);
     this.playerImg = imageMap.get(`chars/${charInfo.name}.png`);
     this.bedBounceTop = bedTop + bedBounceOffset;
-    this.bounceSpeed = 1;
+    this.initBounce();
   }
 
   gameLogic(timePassed) {
+    this.bounceTime += timePassed;
+
     let touchedBed = false;
 
     // Adjust player position based on existing speed
@@ -256,14 +257,12 @@ class PlayerEntity extends Entity {
       this.speedX = 0;
     }
 
-    this.y += this.speedY * (timePassed * verticalSpeedMultiplier);
-
-    // If they touched the bed, apply current bounce
-    if (this.y + this.physHeight >= this.bedBounceTop) {
-      this.y = this.bedBounceTop - this.physHeight;
-      this.speedY = -1 * this.bounceSpeed;
-      touchedBed = true;
-    }
+    // Doing a hard calculation of height to avoid the possibility of being off target
+    // y = Vo t - .5 g t^2
+    const yClimb = (this.launchVelocity * this.bounceTime) - (.5 * gravity * this.bounceTime * this.bounceTime);
+    console.log(`yClimb: ${yClimb}`);
+    this.y = this.bedBounceTop - this.physHeight - yClimb;
+    console.log(`y: ${this.y}`);
 
     // Adjust spin
     this.spin += (timePassed * this.spinSpeed) / spinSpeedFraction;
@@ -292,16 +291,27 @@ class PlayerEntity extends Entity {
       }
     }
 
-    // Apply gravity
-    this.speedY += ((timePassed * gravitySpeedMultiplier) * verticalSpeedMultiplier);
-
-    if (touchedBed) {
+    // Handle touching bed
+    if (this.y + this.physHeight >= this.bedBounceTop) {
+      this.y = this.bedBounceTop - this.physHeight;
       this.gameHandler.bedTouched();
+      this.initBounce();
     }
   }
 
   getCurrentImg() {
     return this.playerImg;
+  }
+
+  initBounce() {
+    // This target height is in positive units
+    const levelHeight = 5000;
+    const targetHeight = (levelHeight - this.gameHandler.calcDonutY()) - (levelHeight - this.bedBounceTop) + 50;
+
+    // Calculate initial speed to reach height
+    // Vo = sqrt(2yg)
+    this.launchVelocity = Math.sqrt(2 * targetHeight * gravity);
+    this.bounceTime = 0;
   }
 }
 
@@ -436,12 +446,13 @@ class MainGameHandler {
     this.bedTop = this.levelImg.height - this.bedHeight - 20;
     this.bedBounceTop = this.bedTop + bedBounceOffset;
 
-    const playerX = (width / 2) - (selectedChar.physWidth / 2);
-    const playerY = this.levelImg.height - selectedChar.physHeight - 300;
-    this.player = new PlayerEntity(this, playerX, playerY, selectedChar, this.bedTop);
     this.playerHealth = 3;
     this.playerFoodCollect = 0;
     this.donutSpawned = false;
+
+    const playerX = (width / 2) - (selectedChar.physWidth / 2);
+    const playerY = this.bedBounceTop - selectedChar.physHeight;
+    this.player = new PlayerEntity(this, playerX, playerY, selectedChar, this.bedTop);
 
     this.entityList = [this.player];
     this.spawnDonut(true);
@@ -534,15 +545,18 @@ class MainGameHandler {
   }
 
   bedTouched() {
+    // Spawn a donut if one doesn't exist
     if (!this.donutSpawned) {
       this.spawnDonut(false);
     }
 
+    // No enemies for initial donuts
     if (this.playerFoodCollect < 2) {
       return;
     }
 
-    const enemyCount = Math.floor(this.playerFoodCollect / 10) * 2 + 1;
+    // Spawn enemies
+    const enemyCount = Math.floor(this.playerFoodCollect / 5) * 2 + 1;
 
     const donutY = this.calcDonutY();
 
@@ -564,7 +578,6 @@ class MainGameHandler {
     this.removeEntity(donut);
     this.playerFoodCollect++;
     this.donutSpawned = false;
-    this.player.bounceSpeed += donutCollectSpeedAdd;
   }
 
   enemyTouched(enemy) {
