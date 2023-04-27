@@ -126,7 +126,7 @@ const enemyInfo = [
     animRate: .0125,
     width: 100,
     height: 100,
-    physWidth: 80,
+    physWidth: 60,
     physHeight: 80
   },
   {
@@ -171,6 +171,68 @@ const explosionAnimRate = .01;
 const explosionWidth = 100;
 const explosionHeight = 100;
 
+const memberEndingLocations = [
+  {
+    x: 120,
+    y: 200,
+  },
+  {
+    x: 280,
+    y: 200,
+  },
+  {
+    x: 50,
+    y: 350,
+  },
+  {
+    x: 350,
+    y: 350,
+  },
+  {
+    x: 120,
+    y: 500,
+  },
+  {
+    x: 280,
+    y: 500,
+  },
+];
+
+const endingLocation = {
+  x: 200,
+  y: 350
+};
+
+const endingSpaceCuttoff = 800;
+
+const keyPressSpeedFraction = 1500;
+const keyPressSpinFraction = 10000;
+const dragSpeedFraction = 10000;
+const spinSpeedMultiplier = .04;
+const horizontalSpeedMultiplier = .5;
+const verticalSpeedMultiplier = .5;
+const gravity = .00025;
+const maxSpin = 0.16;
+const bedBounceOffset = 60;
+const donutMove = 250;
+
+function randomIndex(length) {
+  return Math.floor(Math.random() * length);
+}
+
+function randomBoolean() {
+  return Math.random() < 0.5;
+}
+
+function shuffleArray(array) {
+  const res = [...array];
+  for (let i = res.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [res[i], res[j]] = [res[j], res[i]];
+  }
+  return res;
+}
+
 let entityIdCounter = 0;
 
 class Entity {
@@ -204,6 +266,9 @@ class Entity {
     ctx.drawImage(img, -1 * (this.width / 2), -1 * (this.height / 2), this.width, this.height);
 
     if (debugToggle) {
+      ctx.restore();
+      ctx.save();
+      ctx.translate(drawX, drawY);
       ctx.beginPath();
       ctx.lineWidth = '1';
       ctx.strokeStyle = 'red';
@@ -223,17 +288,6 @@ class Entity {
   }
 }
 
-const keyPressSpeedFraction = 1500;
-const keyPressSpinFraction = 10000;
-const dragSpeedFraction = 10000;
-const spinSpeedFraction = 25;
-const horizontalSpeedMultiplier = .5;
-const verticalSpeedMultiplier = .5;
-const gravity = .00025;
-const maxSpin = 0.16;
-const bedBounceOffset = 60;
-const donutMove = 250;
-
 class PlayerEntity extends Entity {
   constructor(gameHandler, x, y, charInfo, bedTop) {
     super(gameHandler, x, y, charInfo.width, charInfo.height, charInfo.physWidth, charInfo.physHeight);
@@ -245,7 +299,11 @@ class PlayerEntity extends Entity {
   gameLogic(timePassed) {
     this.bounceTime += timePassed;
 
-    let touchedBed = false;
+    // If in space, do the more limited space logic
+    if (this.inSpace) {
+      this.gameLogicSpace(timePassed);
+      return;
+    }
 
     // Adjust player position based on existing speed
     this.x += this.speedX * (timePassed * horizontalSpeedMultiplier);
@@ -260,12 +318,10 @@ class PlayerEntity extends Entity {
     // Doing a hard calculation of height to avoid the possibility of being off target
     // y = Vo t - .5 g t^2
     const yClimb = (this.launchVelocity * this.bounceTime) - (.5 * gravity * this.bounceTime * this.bounceTime);
-    console.log(`yClimb: ${yClimb}`);
     this.y = this.bedBounceTop - this.physHeight - yClimb;
-    console.log(`y: ${this.y}`);
 
     // Adjust spin
-    this.spin += (timePassed * this.spinSpeed) / spinSpeedFraction;
+    this.spin += (timePassed * this.spinSpeed) * spinSpeedMultiplier;
 
     // If pressing left or right, effect speed
     if (leftPressed) {
@@ -303,6 +359,35 @@ class PlayerEntity extends Entity {
     return this.playerImg;
   }
 
+  setInSpace() {
+    if (this.inSpace) {
+      return;
+    }
+    this.inSpace = true;
+  }
+
+  gameLogicSpace(timePassed) {
+    // Adjust spin
+    this.spin += (timePassed * this.spinSpeed) * spinSpeedMultiplier;
+
+    // Make speeds proportional to the square of the distance
+    const xDelta = this.x - endingLocation.x;
+    const yDelta = this.y - endingLocation.y;
+
+    let speedX = Math.pow(Math.abs(xDelta), 1.3) * .0001;
+    let speedY = Math.pow(Math.abs(yDelta), 1.3) * .0001;
+
+    if (xDelta > 0) {
+      speedX *= -1;
+    }
+    if (yDelta > 0) {
+      speedY *= -1;
+    }
+
+    this.x += speedX * (timePassed * horizontalSpeedMultiplier);
+    this.y += speedY * (timePassed * horizontalSpeedMultiplier);
+  }
+
   initBounce() {
     // This target height is in positive units
     const levelHeight = 5000;
@@ -318,7 +403,7 @@ class PlayerEntity extends Entity {
 class DonutEntity extends Entity {
   constructor(gameHandler, donutNumber, x, y) {
     super(gameHandler, x, y, 30, 30, 30, 30);
-    const spinDir = Math.floor(Math.random() * 2) === 1;
+    const spinDir = randomBoolean();
     this.spinSpeed = spinDir ? .05 : -.05;
 
     this.donutImg = imageMap.get(`items/donut${donutNumber}.png`);
@@ -326,7 +411,7 @@ class DonutEntity extends Entity {
 
   gameLogic(timePassed) {
     // Adjust spin
-    this.spin += (timePassed * this.spinSpeed) / spinSpeedFraction;
+    this.spin += (timePassed * this.spinSpeed) * spinSpeedMultiplier;
   }
 
   getCurrentImg() {
@@ -387,6 +472,24 @@ class ExplosionEntity extends Entity {
   getCurrentImg() {
     const frameIndex = (Math.floor(this.totalTime * explosionAnimRate)) % this.animation.length;
     return this.animation[frameIndex];
+  }
+}
+
+class EndingEntity extends Entity {
+  constructor(gameHandler, charInfo, x, y) {
+    super(gameHandler, x, y, charInfo.width, charInfo.height, charInfo.physWidth, charInfo.physHeight);
+    this.charImg = imageMap.get(`chars/${charInfo.name}.png`);
+    const spinRange = .1;
+    this.spinSpeed = (Math.random() * spinRange) - (spinRange / 2);
+  }
+
+  gameLogic(timePassed) {
+    // Adjust spin
+    this.spin += (timePassed * this.spinSpeed) * spinSpeedMultiplier;
+  }
+
+  getCurrentImg() {
+    return this.charImg;
   }
 }
 
@@ -456,6 +559,14 @@ class MainGameHandler {
 
     this.entityList = [this.player];
     this.spawnDonut(true);
+
+    const endingChars = charInfo.filter((char) => char.name !== selectedChar.name);
+    const endingCharsRand = shuffleArray(endingChars);
+    for (let i = 0; i < endingCharsRand.length; i++) {
+      const memberEndingLoc = memberEndingLocations[i];
+      const endingEntity = new EndingEntity(this, endingCharsRand[i], memberEndingLoc.x, memberEndingLoc.y);
+      this.entityList.push(endingEntity);
+    }
   }
 
   render(timePassed) {
@@ -501,6 +612,10 @@ class MainGameHandler {
       return;
     }
 
+    if (this.player.y <= endingSpaceCuttoff) {
+      this.player.setInSpace();
+    }
+
     for (const entity of this.entityList) {
       if (entity.gameLogic) {
         entity.gameLogic(timePassed);
@@ -515,7 +630,7 @@ class MainGameHandler {
   }
 
   removeEntity(entityToRemove) {
-    console.log(`Removing ${entityToRemove.id} ${entityToRemove.constructor.name}`);
+    //console.log(`Removing ${entityToRemove.id} ${entityToRemove.constructor.name}`);
     this.entityList = this.entityList.filter((entity) => entity.id !== entityToRemove.id);
   }
 
@@ -524,7 +639,7 @@ class MainGameHandler {
     let donutX;
 
     if (startingOut) {
-      if (Math.floor(Math.random() * 2) % 2) {
+      if (randomBoolean()) {
         donutX = 50;
       } else {
         donutX = width - 30 - 50;
@@ -534,17 +649,24 @@ class MainGameHandler {
       donutX = (Math.random() * range) + 30;
     }
 
-    const donutIndex = Math.floor(Math.random() * 6) + 1;
+    const donutIndex = randomIndex(6) + 1;
     const donut = new DonutEntity(this, donutIndex, donutX, donutY);
     this.entityList.push(donut);
     this.donutSpawned = true;
   }
 
   calcDonutY() {
-    return this.bedBounceTop - 550 - (this.playerFoodCollect * donutMove);;
+    return this.bedBounceTop - 550 - (this.playerFoodCollect * donutMove);
   }
 
   bedTouched() {
+    const donutY = this.calcDonutY();
+
+    // Don't spawn anything on last stretch
+    if (donutY <= endingSpaceCuttoff) {
+      return;
+    }
+
     // Spawn a donut if one doesn't exist
     if (!this.donutSpawned) {
       this.spawnDonut(false);
@@ -558,15 +680,13 @@ class MainGameHandler {
     // Spawn enemies
     const enemyCount = Math.floor(this.playerFoodCollect / 5) * 2 + 1;
 
-    const donutY = this.calcDonutY();
-
     for (let i = 0; i < enemyCount; i++) {
-      const info = enemyInfo[Math.floor(Math.random() * enemyInfo.length)];
-      const spawnSide = !!Math.floor(Math.random() * 2);
+      const info = enemyInfo[randomIndex(enemyInfo.length)];
+      const spawnSide = randomBoolean();
       const spawnX = spawnSide ?
         -1 * info.width - (Math.random() * 100) :
         width + (Math.random() * 20);
-      const spawnY = donutY + 100 + (i * 150) + (Math.random() * 50);
+      const spawnY = donutY + 100 + (i * 150) + (Math.random() * 100);
       const speedX = (spawnSide ? .125 : -.125) * (1 + i * .05);
 
       const enemy = new EnemyEntity(this, info, spawnX, spawnY, speedX);
