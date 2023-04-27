@@ -30,13 +30,17 @@ const imagePaths = [
   'enemies/bowser-2.png',
   'enemies/bowser-3.png',
   'enemies/bowser-4.png',
+  'enemies/cirno-1.png',
+  'enemies/cirno-2.png',
   'enemies/opa_opa-1.png',
   'enemies/opa_opa-2.png',
   'enemies/plane-1.png',
   'enemies/plane-2.png',
   'enemies/plane-3.png',
-  'enemies/tonberry-1.png',
-  'enemies/tonberry-2.png',
+  'enemies/metroid-1.png',
+  'enemies/metroid-2.png',
+  //'enemies/tonberry-1.png',
+  //'enemies/tonberry-2.png',
   'explosion/explosion-1.png',
   'explosion/explosion-2.png',
   'explosion/explosion-3.png',
@@ -130,10 +134,30 @@ const enemyInfo = [
     physHeight: 80
   },
   {
+    name: 'cirno',
+    maxCount: 1,
+    animation: ['enemies/cirno-1.png', 'enemies/cirno-2.png'],
+    animRate: .0125,
+    width: 50,
+    height: 50,
+    physWidth: 30,
+    physHeight: 30
+  },
+  {
     name: 'opa_opa',
     maxCount: 1,
     animation: ['enemies/opa_opa-1.png', 'enemies/opa_opa-2.png'],
     animRate: .0125,
+    width: 50,
+    height: 50,
+    physWidth: 30,
+    physHeight: 30
+  },
+  {
+    name: 'metroid',
+    maxCount: 1,
+    animation: ['enemies/metroid-1.png', 'enemies/metroid-2.png'],
+    animRate: .00625,
     width: 50,
     height: 50,
     physWidth: 30,
@@ -149,6 +173,7 @@ const enemyInfo = [
     physWidth: 80,
     physHeight: 30
   },
+  /*
   {
     name: 'tonberry',
     maxCount: 3,
@@ -159,6 +184,7 @@ const enemyInfo = [
     physWidth: 30,
     physHeight: 30
   }
+  */
 ];
 
 const explosionFrames = [
@@ -812,7 +838,7 @@ for (const imagePath of imagePaths) {
       resolve()
     });
     image.addEventListener('error', (err) => {
-      console.error(`Error loading ${imageUrl}, with: ${err}`);
+      console.error(`Error loading ${imageUrl}`);
       reject();
     });
     imageMap.set(imagePath, image);
