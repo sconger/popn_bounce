@@ -234,7 +234,7 @@ const dreamAgainLocation = {
   height: 200
 };
 
-const maxHealth = 4;
+const maxHealth = 5;
 const keyPressSpeedFraction = 1500;
 const keyPressSpinFraction = 10000;
 const dragSpeedFraction = 10000;
